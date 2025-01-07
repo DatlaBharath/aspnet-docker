@@ -12,19 +12,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
         
-      - name: Install .NET SDK 6.0 (or other version as required)
+      - name: Install .NET SDK 9.0
         run: |
-          # Add Microsoft's GPG key
-          wget https://packages.microsoft.com/keys/microsoft.asc
-          sudo apt-key add microsoft.asc
-          
-          # Add the Microsoft package repository
-          wget https://packages.microsoft.com/config/ubuntu/20.04/prod.list
-          sudo mv prod.list /etc/apt/sources.list.d/microsoft-prod.list
+          # Add the dotnet/backports PPA repository
+          sudo add-apt-repository ppa:dotnet/backports
 
-          # Update package index and install the .NET SDK
+          # Update package list and install .NET SDK 9.0
           sudo apt-get update
-          sudo apt-get install -y dotnet-sdk-6.0  # Use the version suitable for your project
+          sudo apt-get install -y dotnet-sdk-9.0
 
       - name: Restore dependencies
         run: dotnet restore
