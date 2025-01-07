@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Build and Deploy ASP.NET Application
 
 on:
   push:
@@ -9,30 +9,21 @@ jobs:
   build_project:
     runs-on: self-hosted
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v2
-        
-      - name: Install .NET SDK 9.0
+      - name: Install .NET SDK
         run: |
-          # Add the dotnet/backports PPA repository
-          sudo add-apt-repository ppa:dotnet/backports
-
-          # Update package list and install .NET SDK 9.0
           sudo apt-get update
           sudo apt-get install -y dotnet-sdk-9.0
-
-      - name: Restore dependencies
-        run: dotnet restore
-
-      - name: Build the .NET project
-        run: dotnet build --configuration Release
+      - name: Build Project
+        run: dotnet build --no-restore --no-dependencies
 
   build_image:
     runs-on: self-hosted
     needs: build_project
     steps:
-      - name: Build Docker image
-        run: docker build . -t sakthisiddu1/aspnet-docker:${{ github.run_number }}
+      - name: Build Docker Image
+        run: docker build -t sakthisiddu1/aspnet-docker:${{github.run_number}} .
 
   push_image:
     runs-on: self-hosted
@@ -41,53 +32,57 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Push Docker image
-        run: docker push sakthisiddu1/aspnet-docker:${{ github.run_number }}
+          username: ${{secrets.DOCKERHUB_USERNAME}}
+          password: ${{secrets.DOCKERHUB_PASSWORD}}
+      - name: Push Docker Image
+        run: docker push sakthisiddu1/aspnet-docker:${{github.run_number}}
 
   deploy:
     runs-on: self-hosted
     needs: push_image
     steps:
-      - name: Prepare deployment.yaml
+      - name: Create Deployment YAML
         run: |
           echo "
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: my-app
+            name: aspnet-deployment
           spec:
             replicas: 1
             selector:
               matchLabels:
-                app: my-app
+                app: aspnet
             template:
               metadata:
                 labels:
-                  app: my-app
+                  app: aspnet
               spec:
                 containers:
-                - name: my-app
-                  image: sakthisiddu1/aspnet-docker:${{ github.run_number }}
+                - name: aspnet-container
+                  image: sakthisiddu1/aspnet-docker:${{github.run_number}}
                   ports:
                   - containerPort: 80
           " > deployment.yaml
-      - name: Prepare service.yaml
+    
+      - name: Create Service YAML
         run: |
           echo "
           apiVersion: v1
           kind: Service
           metadata:
-            name: my-app-service
+            name: aspnet-service
           spec:
             type: NodePort
             selector:
-              app: my-app
+              app: aspnet
             ports:
-              - port: 80
+              - protocol: TCP
+                port: 80
+                targetPort: 80
                 nodePort: 30007
           " > service.yaml
+
       - name: Deploy to Kubernetes
         run: |
           ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/test.pem ubuntu@15.206.160.201 "kubectl apply -f -" < deployment.yaml
