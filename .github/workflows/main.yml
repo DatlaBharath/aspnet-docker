@@ -8,10 +8,11 @@ on:
 jobs:
   build_project:
     runs-on: self-hosted
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
-        
+
       - name: Install .NET SDK 9.0
         run: |
           sudo add-apt-repository ppa:dotnet/backports
@@ -22,11 +23,12 @@ jobs:
         run: dotnet restore
 
       - name: Build the .NET project
-        run: dotnet build --configuration Release --no-restore /p:SkipTests=true
+        run: dotnet build --configuration Release --no-restore --no-incremental
 
   build_image:
     runs-on: self-hosted
     needs: build_project
+
     steps:
       - name: Build Docker image
         run: docker build -t sakthisiddu1/aspnet-docker:${{ github.run_number }} .
@@ -34,58 +36,63 @@ jobs:
   push_image:
     runs-on: self-hosted
     needs: build_image
+
     steps:
       - name: Log in to Docker Hub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Push Docker image
+      - name: Push Docker image to Docker Hub
         run: docker push sakthisiddu1/aspnet-docker:${{ github.run_number }}
 
   deploy:
     runs-on: self-hosted
     needs: push_image
-    steps:
-      - name: Create deployment.yaml
-        run: |
-          echo "apiVersion: apps/v1" >> deployment.yaml
-          echo "kind: Deployment" >> deployment.yaml
-          echo "metadata:" >> deployment.yaml
-          echo "  name: aspnet-deployment" >> deployment.yaml
-          echo "spec:" >> deployment.yaml
-          echo "  replicas: 1" >> deployment.yaml
-          echo "  selector:" >> deployment.yaml
-          echo "    matchLabels:" >> deployment.yaml
-          echo "      app: aspnet-app" >> deployment.yaml
-          echo "  template:" >> deployment.yaml
-          echo "    metadata:" >> deployment.yaml
-          echo "      labels:" >> deployment.yaml
-          echo "        app: aspnet-app" >> deployment.yaml
-          echo "    spec:" >> deployment.yaml
-          echo "      containers:" >> deployment.yaml
-          echo "      - name: aspnet-container" >> deployment.yaml
-          echo "        image: sakthisiddu1/aspnet-docker:${{ github.run_number }}" >> deployment.yaml
-          echo "        ports:" >> deployment.yaml
-          echo "        - containerPort: 80" >> deployment.yaml
 
-      - name: Create service.yaml
+    steps:
+      - name: Create Deployment and Service YAML files
         run: |
-          echo "apiVersion: v1" >> service.yaml
-          echo "kind: Service" >> service.yaml
-          echo "metadata:" >> service.yaml
-          echo "  name: aspnet-service" >> service.yaml
-          echo "spec:" >> service.yaml
-          echo "  type: NodePort" >> service.yaml
-          echo "  selector:" >> service.yaml
-          echo "    app: aspnet-app" >> service.yaml
-          echo "  ports:" >> service.yaml
-          echo "  - port: 80" >> service.yaml
-          echo "    targetPort: 80" >> service.yaml
-          echo "    nodePort: 30007" >> service.yaml
+          echo "
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: aspnet-deployment
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: aspnet
+            template:
+              metadata:
+                labels:
+                  app: aspnet
+              spec:
+                containers:
+                - name: aspnet
+                  image: sakthisiddu1/aspnet-docker:${{ github.run_number }}
+                  ports:
+                  - containerPort: 80
+          " > deployment.yaml
+
+          echo "
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: aspnet-service
+          spec:
+            type: NodePort
+            selector:
+              app: aspnet
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+                nodePort: 30007
+          " > service.yaml
 
       - name: Deploy to Kubernetes
         run: |
-          ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/test.pem ubuntu@15.206.160.201 "kubectl apply -f -" < deployment.yaml
-          ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/test.pem ubuntu@15.206.160.201 "kubectl apply -f -" < service.yaml
+          ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/test.pem ubuntu@13.235.243.140 "kubectl apply -f -" < deployment.yaml
+          ssh -o StrictHostKeyChecking=no -i /home/ubuntu/.ssh/test.pem ubuntu@13.235.243.140 "kubectl apply -f -" < service.yaml
